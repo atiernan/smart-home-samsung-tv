@@ -14,6 +14,7 @@ import (
 var portNumber = 55000
 var webSocketPort = 8001
 
+// SamsungTV contains the information to connect to a Samsung TV
 type SamsungTV struct {
 	Host            string
 	ApplicationID   string

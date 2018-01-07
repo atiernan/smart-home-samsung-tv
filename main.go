@@ -1,7 +1,6 @@
 package main
 
 import (
-	"TVCommon"
 	"encoding/json"
 	"flag"
 	"io"
@@ -9,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/atiernan/smartHomeSamsungTVCommon"
 	"github.com/chbmuc/cec"
 )
 
@@ -47,7 +47,7 @@ func main() {
 		}
 
 		decoder := json.NewDecoder(response.Body)
-		var message TVCommon.DeviceEndpointResponse
+		var message smartHomeSamsungTVCommon.DeviceEndpointResponse
 		if err := decoder.Decode(&message); err == io.EOF {
 			break
 		}

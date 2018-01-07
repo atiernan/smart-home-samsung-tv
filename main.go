@@ -4,46 +4,50 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/atiernan/smartHomeSamsungTVCommon"
-	"github.com/chbmuc/cec"
+	"github.com/ghthor/gowol"
 )
 
+type tv struct {
+	MACAddress string
+	ID         string
+	Host       string
+}
+type configData struct {
+	TVs       []tv
+	ServerURL string
+}
+
+func readConfig(path string) configData {
+	data, _ := ioutil.ReadFile(path)
+	config := configData{}
+	json.Unmarshal(data, &config)
+	return config
+}
+
 func main() {
-	tvIP := flag.String("tv-ip", "127.0.0.1", "The IP address of the TV to control")
-	serverURL := flag.String("server", "http://example.com", "The URL to the webserver")
+	configFilePath := flag.String("config", "/dev/null", "The config file to use")
 	flag.Parse()
 
-	if *tvIP == "127.0.0.1" {
-		log.Println("A host IP must be specified")
-		return
-	}
-
-	if *serverURL == "http://example.com" {
-		log.Println("A server URL must be specified")
-		return
-	}
-
-	c, err := cec.Open("", "cec.go")
-	if err != nil {
-		log.Println(err)
-		return
-	}
+	config := readConfig(*configFilePath)
 
 	tv := SamsungTV{
-		Host:            *tvIP,
+		Host:            config.TVs[0].Host,
 		ApplicationID:   "google-home-samsung",
 		ApplicationName: "Google Samsung Remote",
 	}
 
 	for {
 		time.Sleep(1 * time.Second)
-		response, err := http.Get(*serverURL)
+		response, err := http.Get(config.ServerURL + "device/endpoint")
 		if err != nil {
-			log.Println("Failed to fetch latest status")
+			log.Println("Failed to fetch latest status from \"" + config.ServerURL + "device/endpoint\"")
+			continue
 		}
 
 		decoder := json.NewDecoder(response.Body)
@@ -56,7 +60,15 @@ func main() {
 			log.Fatal(err)
 		} else {
 			if message.TVSwitchedOn {
-				c.PowerOn(0)
+				if tv.Connect() {
+					if !tv.SendCommand("KEY_POWER") {
+						log.Fatal("Failed to send command")
+					}
+					tv.Close()
+				} else {
+					log.Println("Failed to send power command, sending WoL packet")
+					wol.MagicWake(config.TVs[0].MACAddress, "255.255.255.255")
+				}
 			}
 			if message.TVSwitchedOff {
 				if tv.Connect() {
@@ -97,6 +109,12 @@ func main() {
 			if message.Play {
 				if tv.Connect() {
 					tv.SendCommand("KEY_PLAY")
+					tv.Close()
+				}
+			}
+			if message.OK {
+				if tv.Connect() {
+					tv.SendCommand("KEY_OK")
 					tv.Close()
 				}
 			}

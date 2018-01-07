@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/url"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -38,10 +39,12 @@ func (tv *SamsungTV) Connect() bool {
 	}
 
 	var err error
-	tv.webSocket, _, err = websocket.DefaultDialer.Dial(u.String(), nil)
+	dialer := websocket.Dialer{}
+	dialer.HandshakeTimeout = time.Second
+	tv.webSocket, _, err = dialer.Dial(u.String(), nil)
 	if err != nil {
 		fmt.Println("Failed to connect to TV websocket, trying legacy connection")
-		tv.legacySocket, err = net.Dial("tcp", fmt.Sprintf("%s:%d", tv.Host, portNumber))
+		tv.legacySocket, err = net.DialTimeout("tcp", fmt.Sprintf("%s:%d", tv.Host, portNumber), time.Second)
 		if err == nil {
 			tv.connectedLegacy = true
 		} else {
@@ -50,7 +53,7 @@ func (tv *SamsungTV) Connect() bool {
 	} else {
 		_, _, err := tv.webSocket.ReadMessage()
 		if err != nil {
-			log.Println("Error:", err)
+			log.Println("Error reading initial websocket message:", err)
 		}
 		tv.connectedWS = true
 	}

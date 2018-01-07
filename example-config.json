@@ -1,0 +1,10 @@
+{
+    "TVs": [
+        {
+            "Host": "127.0.0.1",
+            "MACAddress": "00:00:00:00:00:00",
+            "ID": "uuid:xxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        }
+    ],
+    "ServerURL": "http://example.com/"
+}

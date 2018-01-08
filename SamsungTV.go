@@ -43,12 +43,11 @@ func (tv *SamsungTV) Connect() bool {
 	dialer.HandshakeTimeout = time.Second
 	tv.webSocket, _, err = dialer.Dial(u.String(), nil)
 	if err != nil {
-		fmt.Println("Failed to connect to TV websocket, trying legacy connection")
 		tv.legacySocket, err = net.DialTimeout("tcp", fmt.Sprintf("%s:%d", tv.Host, portNumber), time.Second)
 		if err == nil {
 			tv.connectedLegacy = true
 		} else {
-			fmt.Println("Failed to connect through legacy connection")
+			fmt.Println("Failed to connect to TV")
 		}
 	} else {
 		_, _, err := tv.webSocket.ReadMessage()
@@ -129,7 +128,8 @@ func (tv SamsungTV) sendWSCommand(command string) bool {
 	return (err == nil)
 }
 
-// SendCommand sends a command to the TV, using whichever connection is available
+// SendCommand sends a command to the TV
+// Requires Connect to be called first
 func (tv SamsungTV) SendCommand(command string) bool {
 	if tv.connectedLegacy {
 		return tv.sendLegacyCommand(command)
@@ -139,6 +139,18 @@ func (tv SamsungTV) SendCommand(command string) bool {
 		fmt.Println("Not connected to TV")
 	}
 	return false
+}
+
+// SendSingleCommand connects to the TV, sends the command, and closes the connection
+func (tv SamsungTV) SendSingleCommand(command string) bool {
+	var result = false
+	if tv.Connect() {
+		if tv.SendCommand(command) {
+			result = true
+		}
+		tv.Close()
+	}
+	return result
 }
 
 func wrapMessage(msg *bytes.Buffer) []byte {

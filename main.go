@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/atiernan/smartHomeSamsungTVCommon"
@@ -25,19 +26,54 @@ type configData struct {
 	ServerURL string
 }
 
-type tvConnectionDataURI struct {
+type tvEndpointURI struct {
 	URI string `json:"uri"`
 }
-type tvConnectionData struct {
-	V1 tvConnectionDataURI `json:"v1"`
-	V2 tvConnectionDataURI `json:"v2"`
+type tvEndpoints struct {
+	V1 tvEndpointURI `json:"v1"`
+	V2 tvEndpointURI `json:"v2"`
 }
-type tvConnectionInformation struct {
-	Data   tvConnectionData `json:"data"`
-	Remote string           `json:"remote"`
-	ID     string           `json:"sid"`
-	TTL    uint16           `json:"ttl"`
-	Type   string           `json:"type"`
+type tvSimpleInformation struct {
+	Data   tvEndpoints `json:"data"`
+	Remote string      `json:"remote"`
+	ID     string      `json:"sid"`
+	TTL    uint16      `json:"ttl"`
+	Type   string      `json:"type"`
+}
+type tvDetailedData struct {
+	FrameTVSupport    bool   `json:"FrameTVSupport"`
+	GamePadSupport    bool   `json:"GamePadSupport"`
+	ImeSyncedSupport  bool   `json:"ImeSyncedSupport"`
+	OS                string `json:"OS"`
+	VoiceSupport      bool   `json:"VoiceSupport"`
+	CountryCode       string `json:"countryCode"`
+	Description       string `json:"description"`
+	DeveloperIP       string `json:"developerIP"`
+	DeveloperMode     string `json:"developerMode"`
+	DUID              string `json:"duid"`
+	FirmwareVersion   string `json:"firmwareVersion"`
+	ID                string `json:"id"`
+	IP                string `json:"ip"`
+	Model             string `json:"model"`
+	ModelName         string `json:"modelName"`
+	Name              string `json:"name"`
+	NetworkType       string `json:"networkType"`
+	Resolution        string `json:"resolution"`
+	SmartHubAgreement string `json:"smartHubAgreement"`
+	SSID              string `json:"ssid"`
+	Type              string `json:"type"`
+	UDN               string `json:"udn"`
+	WifiMac           string `json:"wifiMac"`
+}
+type tvDetailedInformation struct {
+	Device    tvDetailedData `json:"device"`
+	ID        string         `json:"id"`
+	IsSupport string         `json:"isSupport"`
+	Name      string         `json:"name"`
+	Remote    string         `json:"remote"`
+	Type      string         `json:"type"`
+	URI       string         `json:"uri"`
+	Version   string         `json:"version"`
 }
 
 func readConfig(path string) configData {
@@ -47,7 +83,7 @@ func readConfig(path string) configData {
 	return config
 }
 
-func listenForTVs(channels map[string]chan string) {
+func listenForTVs(callback func(tvSimpleInformation)) {
 	// Set up listening socket
 	readBufferSize := 8192
 	addr, err := net.ResolveUDPAddr("udp", "224.0.0.7:8001")
@@ -63,13 +99,12 @@ func listenForTVs(channels map[string]chan string) {
 		if err != nil {
 			log.Fatal(err)
 		} else {
-			tvInformation := tvConnectionInformation{}
+			tvInformation := tvSimpleInformation{}
 			err := json.Unmarshal(b[:n], &tvInformation)
 			if err != nil {
 				log.Fatal(err)
 			} else {
-				u, _ := url.Parse(tvInformation.Data.V2.URI)
-				channels[tvInformation.ID] <- u.Hostname()
+				callback(tvInformation)
 			}
 		}
 	}
@@ -163,22 +198,55 @@ func tvController(tvData tv, IPChannel chan string, serverURL string) {
 	log.Fatal("TV Controller finished, controllers are supposed to run indefinetley")
 }
 
-func main() {
-	configFilePath := flag.String("config", "/dev/null", "The config file to use")
-	flag.Parse()
-	config := readConfig(*configFilePath)
+func searchTVs() {
+	log.Println("Searching for TVs")
+	log.Println("Please make sure the TV you are searching for is switched on...")
 
-	var tvIDtoIPMap map[string]chan string
-	tvIDtoIPMap = make(map[string]chan string)
+	var tvIDtoMac map[string]string
+	tvIDtoMac = make(map[string]string)
+	callback := func(tv tvSimpleInformation) {
+		if _, ok := tvIDtoMac[tv.ID]; !ok {
+			resp, _ := http.Get(tv.Data.V2.URI)
+			msg := tvDetailedInformation{}
+			decoder := json.NewDecoder(resp.Body)
+			decoder.Decode(&msg)
+			resp.Body.Close()
 
-	for _, tv := range config.TVs {
-		log.Printf("Creating goroutine for %s", tv.ID)
-		tvIDtoIPMap[tv.ID] = make(chan string)
-		go tvController(tv, tvIDtoIPMap[tv.ID], config.ServerURL)
+			log.Printf("Found \"%s\"\r\n", msg.Name)
+			log.Printf(" - ID: %s", msg.ID)
+			log.Printf(" - MAC: %s", msg.Device.WifiMac)
+			tvIDtoMac[tv.ID] = msg.Device.WifiMac
+		}
 	}
+	listenForTVs(callback)
+}
 
-	go listenForTVs(tvIDtoIPMap)
+func main() {
+	if len(os.Args) > 1 {
+		if os.Args[1] == "search" {
+			searchTVs()
+		} else {
+			configFilePath := flag.String("config", "/dev/null", "The config file to use")
+			flag.Parse()
+			config := readConfig(*configFilePath)
 
-	for {
+			var tvIDtoIPMap map[string]chan string
+			tvIDtoIPMap = make(map[string]chan string)
+
+			for _, tv := range config.TVs {
+				log.Printf("Creating goroutine for %s", tv.ID)
+				tvIDtoIPMap[tv.ID] = make(chan string)
+				go tvController(tv, tvIDtoIPMap[tv.ID], config.ServerURL)
+			}
+
+			callback := func(tvInformation tvSimpleInformation) {
+				u, _ := url.Parse(tvInformation.Data.V2.URI)
+				tvIDtoIPMap[tvInformation.ID] <- u.Hostname()
+			}
+			go listenForTVs(callback)
+
+			for {
+			}
+		}
 	}
 }
